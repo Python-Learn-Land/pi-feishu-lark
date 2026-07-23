@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from 
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { buildModelCard, buildResumeCard, parseModelActionValue, parseResumePageActionValue, parseResumeSelectActionValue } from "./cards.js";
+import { buildModelCard, buildResumeCard, buildWorkspaceCard, parseModelActionValue, parseResumePageActionValue, parseResumeSelectActionValue, parseWorkspacePageActionValue, parseWorkspaceSelectActionValue } from "./cards.js";
 import { BRIDGE_PATH, CHILD_SESSION_ENV, CONFIG_PATH, DAEMON_LOG_PATH, DEBUG_LOG_PATH, DEDUPE_PATH, ensureRoot, loadConfig, mask, removePath, STATE_PATH, writeJson } from "./config.js";
 import { debugLog } from "./debug.js";
 import { FeishuBridgeRuntime } from "./bridge-runtime.js";
@@ -185,6 +185,19 @@ export default function feishuExtension(pi: ExtensionAPI) {
         });
         const page = await conversations.listResumeSessions(resumeSelect.key, resumeSelect.scope, resumeSelect.page);
         return buildResumeCard(page);
+      }
+      const wsPage = parseWorkspacePageActionValue(action.value);
+      if (wsPage) {
+        const page = await conversations.listWorkspaces(wsPage.key, wsPage.page);
+        return buildWorkspaceCard(page, conversations.getWorkspace(wsPage.key));
+      }
+      const wsSelect = parseWorkspaceSelectActionValue(action.value);
+      if (wsSelect) {
+        await conversations.switchWorkspace(wsSelect.key, wsSelect.workspace, async (reply) => {
+          await transport?.replyText(action.messageId, reply);
+        });
+        const page = await conversations.listWorkspaces(wsSelect.key, wsSelect.page);
+        return buildWorkspaceCard(page, conversations.getWorkspace(wsSelect.key));
       }
       const selected = parseModelActionValue(action.value);
       if (!selected) return;

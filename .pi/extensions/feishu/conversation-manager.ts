@@ -12,7 +12,7 @@ import {
 import type { FeishuBridgeRuntime } from "./bridge-runtime.js";
 import { CHILD_SESSION_ENV, ensureRoot, readJson, STATE_PATH, writeJson } from "./config.js";
 import { debugLog } from "./debug.js";
-import type { ResumeScope, ResumeSessionPage } from "./cards.js";
+import type { ResumeScope, ResumeSessionPage, WorkspacePage } from "./cards.js";
 import type { TaskStatusSink } from "./task-status-card.js";
 import type { FeishuState } from "./types.js";
 
@@ -299,6 +299,49 @@ export class ConversationManager {
     });
     this.queues.set(key, next);
     await next;
+  }
+  async listWorkspaces(key: string, page: number): Promise<WorkspacePage> {
+    const all = await SessionManager.listAll();
+    const byCwd = new Map<string, Date>();
+    for (const s of all) {
+      if (!s.cwd) continue;
+      const m = s.modified instanceof Date ? s.modified : new Date(s.modified);
+      const prev = byCwd.get(s.cwd);
+      if (!prev || m > prev) byCwd.set(s.cwd, m);
+    }
+
+    const current = this.getWorkspace(key);
+    for (const c of [current, this.cwd]) {
+      if (c && !byCwd.has(c)) byCwd.set(c, new Date(0));
+    }
+
+    const normalized: Array<{ cwd: string; modified: Date }> = [];
+    for (const [cwd, modified] of byCwd) {
+      if (!existsSync(cwd)) continue;
+      let real: string;
+      try { real = realpathSync(cwd); } catch { continue; }
+      normalized.push({ cwd: real, modified });
+    }
+
+    const dedup = new Map<string, Date>();
+    for (const { cwd, modified } of normalized) {
+      const prev = dedup.get(cwd);
+      if (!prev || modified > prev) dedup.set(cwd, modified);
+    }
+
+    const sorted = [...dedup.entries()].sort((a, b) => b[1].getTime() - a[1].getTime());
+    const total = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(total / RESUME_PAGE_SIZE));
+    const clampedPage = Math.min(Math.max(0, Math.floor(page)), totalPages - 1);
+    const start = clampedPage * RESUME_PAGE_SIZE;
+    const items = sorted.slice(start, start + RESUME_PAGE_SIZE).map(([cwd, modified]) => ({
+      cwd,
+      label: `${basename(cwd)} · ${cwd}`,
+      modifiedLabel: formatModifiedLabel(modified),
+      isCurrent: cwd === current,
+    }));
+
+    return { key, page: clampedPage, total, totalPages, items };
   }
 
   async getAvailableModels() {

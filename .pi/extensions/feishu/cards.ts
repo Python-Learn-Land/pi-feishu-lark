@@ -23,6 +23,21 @@ export type ResumeSessionPage = {
   items: ResumeSessionItem[];
 };
 
+export type WorkspaceItem = {
+  cwd: string;
+  label: string;
+  modifiedLabel: string;
+  isCurrent: boolean;
+};
+
+export type WorkspacePage = {
+  key: string;
+  page: number;
+  total: number;
+  totalPages: number;
+  items: WorkspaceItem[];
+};
+
 export function buildModelCard(key: string, models: any[], currentModel: any) {
   const current = modelLabel(currentModel);
   const elements: any[] = [
@@ -194,6 +209,108 @@ export function parseResumeSelectActionValue(value: unknown): { key: string; sco
     scope: raw.scope,
     page: Math.max(0, Math.floor(raw.page)),
     sessionPath: raw.sessionPath,
+  };
+}
+export function buildWorkspaceCard(data: WorkspacePage, currentWorkspace: string) {
+  const elements: any[] = [
+    {
+      tag: "markdown",
+      content: [
+        `当前工作区：**${escapeMarkdown(currentWorkspace)}**`,
+        data.total
+          ? `第 **${data.page + 1} / ${data.totalPages}** 页，共 **${data.total}** 个项目。`
+          : "还没有可选工作区。请用 `/workspace /绝对路径` 手动指定。",
+        "点击下面的按钮即可把当前飞书会话切换到对应工作区。",
+      ].join("\n"),
+    },
+  ];
+
+  for (const item of data.items) {
+    elements.push({
+      tag: "markdown",
+      content: [
+        `**${escapeMarkdown(item.label)}**${item.isCurrent ? " `当前使用中`" : ""}`,
+        `最后使用：${escapeMarkdown(item.modifiedLabel)}`,
+      ].join("\n"),
+    });
+    elements.push({
+      tag: "action",
+      actions: [{
+        tag: "button",
+        text: {
+          tag: "plain_text",
+          content: item.isCurrent ? "当前工作区" : "切换到这里",
+        },
+        type: item.isCurrent ? "primary" : "default",
+        value: {
+          action: "pi_feishu_workspace_select",
+          key: data.key,
+          page: data.page,
+          workspace: item.cwd,
+        },
+      }],
+    });
+  }
+
+  if (data.total) {
+    elements.push({
+      tag: "action",
+      actions: [
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "上一页" },
+          type: "default",
+          disabled: data.page <= 0,
+          value: {
+            action: "pi_feishu_workspace_page",
+            key: data.key,
+            page: Math.max(0, data.page - 1),
+          },
+        },
+        {
+          tag: "button",
+          text: { tag: "plain_text", content: "下一页" },
+          type: "default",
+          disabled: data.page >= data.totalPages - 1,
+          value: {
+            action: "pi_feishu_workspace_page",
+            key: data.key,
+            page: Math.min(Math.max(0, data.totalPages - 1), data.page + 1),
+          },
+        },
+      ],
+    });
+  }
+
+  return {
+    config: sharedCardConfig(),
+    header: {
+      template: "wathet",
+      title: { tag: "plain_text", content: "切换 Pi 工作区" },
+    },
+    elements,
+  };
+}
+
+export function parseWorkspacePageActionValue(value: unknown): { key: string; page: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as any;
+  if (raw.action !== "pi_feishu_workspace_page") return undefined;
+  if (typeof raw.key !== "string") return undefined;
+  if (typeof raw.page !== "number" || !Number.isFinite(raw.page)) return undefined;
+  return { key: raw.key, page: Math.max(0, Math.floor(raw.page)) };
+}
+
+export function parseWorkspaceSelectActionValue(value: unknown): { key: string; page: number; workspace: string } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as any;
+  if (raw.action !== "pi_feishu_workspace_select") return undefined;
+  if (typeof raw.key !== "string" || typeof raw.workspace !== "string") return undefined;
+  if (typeof raw.page !== "number" || !Number.isFinite(raw.page)) return undefined;
+  return {
+    key: raw.key,
+    page: Math.max(0, Math.floor(raw.page)),
+    workspace: raw.workspace,
   };
 }
 
