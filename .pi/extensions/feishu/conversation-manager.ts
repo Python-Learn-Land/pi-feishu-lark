@@ -87,7 +87,7 @@ export class ConversationManager {
         try {
           await withTimeout(
             session.prompt(userText, images.length ? { images } : undefined),
-            180_000,
+            1800_000,
             "Pi 模型处理超时，请稍后重试；如果是图片消息，可以先切换到明确支持图片的模型。",
           );
         } catch (error) {
