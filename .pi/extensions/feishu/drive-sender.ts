@@ -1,7 +1,7 @@
 import { open } from "node:fs/promises";
 import { basename } from "node:path";
 import { join } from "node:path";
-import { ROOT_DIR, readJson, writeJson } from "./config.js";
+import { loadConfig, ROOT_DIR, readJson, writeJson } from "./config.js";
 import { debugLog } from "./debug.js";
 import { formatBytes, getFeishuApiClient, resolveRoute, sendTextToSessionRoute } from "./file-sender.js";
 
@@ -17,10 +17,12 @@ import { formatBytes, getFeishuApiClient, resolveRoute, sendTextToSessionRoute }
  */
 
 const DRIVE_CACHE_PATH = join(ROOT_DIR, "drive.json");
+
+/** 缓存必须按 appId 隔离：重新 setup 创建新应用后，旧应用的根目录 token 会让上传直接失败 */
+type DriveCache = { appId?: string; rootFolderToken?: string };
+
 const SCOPE_HINT =
   "需要在飞书开发者后台给应用添加 drive:drive 权限并发布版本（权限管理 → 搜索 drive:drive → 开通，然后创建版本发布）";
-
-type DriveCache = { rootFolderToken?: string };
 
 export type DriveSendResult = {
   fileName: string;
@@ -165,17 +167,18 @@ async function getDriveFileUrl(fileToken: string): Promise<string | undefined> {
   return undefined;
 }
 
-/** 应用云文档根目录 token，缓存在 ~/.pi/agent/feishu/drive.json（不会变化）。 */
+/** 应用云文档根目录 token，缓存在 ~/.pi/agent/feishu/drive.json（同一应用内不会变化）。 */
 async function getRootFolderToken(client: any): Promise<string> {
+  const appId = loadConfig()?.appId;
   const cache = readJson<DriveCache>(DRIVE_CACHE_PATH, {});
-  if (cache.rootFolderToken) return cache.rootFolderToken;
+  if (cache.rootFolderToken && cache.appId === appId) return cache.rootFolderToken;
 
   const res = await client.request({ url: "/open-apis/drive/explorer/v2/root_folder/meta", method: "GET" });
   const token = res?.data?.token ?? res?.token;
   if (!token) {
     throw enrichDriveError(new Error(`获取云文档根目录失败：${preview(res)}`));
   }
-  writeJson(DRIVE_CACHE_PATH, { rootFolderToken: token } satisfies DriveCache);
+  writeJson(DRIVE_CACHE_PATH, { appId, rootFolderToken: token } satisfies DriveCache);
   return token;
 }
 

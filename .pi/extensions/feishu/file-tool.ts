@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { debugLog } from "./debug.js";
 import { sendLargeFileViaDrive } from "./drive-sender.js";
 import { createFileLink, fileServerBaseUrl } from "./file-server.js";
 import { formatBytes, MAX_UPLOAD_BYTES, sendFileToSessionRoute, sendTextToSessionRoute } from "./file-sender.js";
@@ -78,6 +79,7 @@ async function sendLargeFile(sessionId: string, filePath: string, size: number) 
       };
     } catch (error) {
       driveError = error instanceof Error ? error.message : String(error);
+      debugLog("feishu.file_tool.drive_failed", { filePath, error: driveError });
       if (mode === "drive") {
         throw new Error(`${driveError}（当前 FEISHU_LARGE_FILE_MODE=drive，未使用本机链接充底）`);
       }
@@ -86,9 +88,10 @@ async function sendLargeFile(sessionId: string, filePath: string, size: number) 
 
   const link = await createFileLink(filePath);
   const minutes = Math.round(link.ttlMs / 60_000);
+  const shortDriveError = driveError ? `\n（云文档上传失败：${truncate(driveError, 120)}）` : "";
   await sendTextToSessionRoute(
     sessionId,
-    `📎 ${fileName}（${formatBytes(size)}）\n文件超过飞书 30MB 上传限制，已生成临时下载链接（${minutes} 分钟内有效）：\n${link.url}`,
+    `📎 ${fileName}（${formatBytes(size)}）\n文件超过飞书 30MB 上传限制，已生成临时下载链接（${minutes} 分钟内有效）：\n${link.url}${shortDriveError}`,
   );
   const driveNote = driveError
     ? `另外，飞书云文档上传失败（${driveError}）；如果这台主机没有公网 IP，建议按提示开通 drive:drive 权限后重试。`
@@ -104,4 +107,8 @@ async function sendLargeFile(sessionId: string, filePath: string, size: number) 
     }],
     details: undefined,
   };
+}
+
+function truncate(text: string, max: number) {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }
