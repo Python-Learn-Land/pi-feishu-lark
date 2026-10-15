@@ -8,9 +8,13 @@ export async function uiSelect<T extends string>(ctx: ExtensionCommandContext, t
   if (typeof ui.select !== "function") {
     throw new Error("Current UI does not support select prompts.");
   }
-  const labels = options.map((o) => o.label);
-  const initialLabel = options.find((o) => o.value === initialValue)?.label;
-  const selectedLabel = await ui.select(title, labels, initialLabel ? { initialValue: initialLabel } : undefined);
+  // pi always highlights the first option and has no way to preselect one, so
+  // the default is applied by putting it first.
+  const defaultIndex = options.findIndex((o) => o.value === initialValue);
+  const ordered = defaultIndex > 0
+    ? [...options.slice(defaultIndex), ...options.slice(0, defaultIndex)]
+    : options;
+  const selectedLabel = await ui.select(title, ordered.map((o) => o.label));
   const matched = options.find((o) => o.label === selectedLabel);
   if (!matched) {
     throw new Error("Selection cancelled.");
@@ -27,7 +31,17 @@ export async function uiInput(ctx: ExtensionCommandContext, title: string, defau
 
 export async function uiConfirm(ctx: ExtensionCommandContext, title: string, initial = true): Promise<boolean> {
   const ui: any = ctx.ui;
-  if (typeof ui.confirm === "function") return Boolean(await ui.confirm(title, "", { initialValue: initial }));
+  const yes = "Yes";
+  const no = "No";
+  if (typeof ui.select === "function") {
+    // ui.confirm renders a fixed ["Yes", "No"] list starting on the first entry,
+    // which would make a destructive prompt default to Yes. Ordering the answers
+    // through ui.select keeps the intended default highlighted.
+    const ordered = initial ? [yes, no] : [no, yes];
+    const selected = await ui.select(title, ordered);
+    return selected === yes;
+  }
+  if (typeof ui.confirm === "function") return Boolean(await ui.confirm(title, ""));
   return initial;
 }
 

@@ -31,6 +31,35 @@ export type StopConversationResult =
 
 const RESUME_PAGE_SIZE = 10;
 
+const FEISHU_SYSTEM_PROMPT_NOTE =
+  "You are replying through Feishu/Lark. Keep answers concise and readable in chat. Do not use markdown tables.";
+
+/**
+ * Load the resources for a Feishu-backed child session.
+ *
+ * The note is appended instead of replacing the prompt: pi passes
+ * `systemPromptOverride` the user-configured prompt, not its built-in one, so
+ * returning text there drops the default preamble, `<tools>`, `<rules>`, and
+ * `<docs>` sections while the tools stay declared.
+ */
+export async function loadChildSessionResources(workspaceCwd: string): Promise<DefaultResourceLoader> {
+  const loader = new DefaultResourceLoader({
+    cwd: workspaceCwd,
+    agentDir: getAgentDir(),
+    appendSystemPromptOverride: (base) => [...base, FEISHU_SYSTEM_PROMPT_NOTE],
+  });
+
+  const previousChildEnv = process.env[CHILD_SESSION_ENV];
+  process.env[CHILD_SESSION_ENV] = "1";
+  try {
+    await loader.reload();
+  } finally {
+    if (previousChildEnv === undefined) delete process.env[CHILD_SESSION_ENV];
+    else process.env[CHILD_SESSION_ENV] = previousChildEnv;
+  }
+  return loader;
+}
+
 export class ConversationManager {
   private readonly sessions = new Map<string, Promise<AgentSession>>();
   private readonly queues = new Map<string, Promise<void>>();
@@ -420,23 +449,7 @@ export class ConversationManager {
       ? SessionManager.open(existingFile, undefined, workspaceCwd)
       : SessionManager.create(workspaceCwd);
 
-    const loader = new DefaultResourceLoader({
-      cwd: workspaceCwd,
-      agentDir: getAgentDir(),
-      systemPromptOverride: (base) => {
-        const extra = "You are replying through Feishu/Lark. Keep answers concise and readable in chat. Do not use markdown tables.";
-        return base?.trim() ? `${base}\n\n${extra}` : extra;
-      },
-    });
-
-    const previousChildEnv = process.env[CHILD_SESSION_ENV];
-    process.env[CHILD_SESSION_ENV] = "1";
-    try {
-      await loader.reload();
-    } finally {
-      if (previousChildEnv === undefined) delete process.env[CHILD_SESSION_ENV];
-      else process.env[CHILD_SESSION_ENV] = previousChildEnv;
-    }
+    const loader = await loadChildSessionResources(workspaceCwd);
 
     const { session } = await createAgentSession({
       cwd: workspaceCwd,

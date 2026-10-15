@@ -12,6 +12,8 @@ const piCli = join(dirname(codingAgentEntry), "cli.js");
 const extensionPath = join(repoRoot, ".pi/extensions/feishu/index.ts");
 const modelRuntimeExtensionPath = join(repoRoot, "tests/fixtures/model-runtime-extension.ts");
 const settleExtensionPath = join(repoRoot, "tests/fixtures/settle-extension.ts");
+const systemPromptExtensionPath = join(repoRoot, "tests/fixtures/system-prompt-extension.ts");
+const confirmDefaultExtensionPath = join(repoRoot, "tests/fixtures/confirm-default-extension.ts");
 
 function runFeishuCommand(command, extraExtensions = []) {
   const homeDir = mkdtempSync(join(tmpdir(), "pi-feishu-lark-test-"));
@@ -76,4 +78,20 @@ test("does not start the daemon before Feishu is configured", () => {
 test("initializes the current Pi model runtime", () => {
   const result = runFeishuCommand("/verify-feishu-model-runtime", [modelRuntimeExtensionPath]);
   assert.equal(result.status, 0, outputOf(result) || `Pi exited via ${result.signal || "unknown signal"}`);
+});
+
+test("keeps the built-in Pi system prompt for Feishu child sessions", () => {
+  const result = runFeishuCommand("/verify-feishu-system-prompt", [systemPromptExtensionPath]);
+  const output = outputOf(result);
+  assert.equal(result.status, 0, output || `Pi exited via ${result.signal || "unknown signal"}`);
+  assert.match(output, /SYSTEM_PROMPT_CHECK_OK/, output);
+  assert.doesNotMatch(output, /SYSTEM_PROMPT_CHECK_FAILED/, output);
+});
+
+test("highlights the intended default in setup prompts", () => {
+  const result = runFeishuCommand("/verify-feishu-confirm-defaults", [confirmDefaultExtensionPath]);
+  const output = outputOf(result);
+  assert.equal(result.status, 0, output || `Pi exited via ${result.signal || "unknown signal"}`);
+  assert.match(output, /CONFIRM_DEFAULT_CHECK_OK/, output);
+  assert.doesNotMatch(output, /CONFIRM_DEFAULT_CHECK_FAILED/, output);
 });
