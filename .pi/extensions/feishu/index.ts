@@ -347,7 +347,20 @@ export default function feishuExtension(pi: ExtensionAPI) {
           const configToStart = await runSetup(ctx);
           if (configToStart) {
             writeJson(CONFIG_PATH, configToStart);
-            notifyDaemonStartResult(ctx, await startDaemon(false));
+            // A running gateway snapshots its config when it spawns, so it keeps
+            // serving the previous credentials. Replace it instead of deferring to
+            // the "busy" owner, which would silently drop the config just written.
+            const result = await restartDaemon();
+            if (result.status === "error") {
+              const stopped = result.stopped;
+              ctx.ui.notify(
+                `配置已保存，但重启飞书连接失败：${stopped.error instanceof Error ? stopped.error.message : String(stopped.error)}\nOwner: ${formatOwner(stopped.owner)}`,
+                "error",
+              );
+              refreshStatusFromState();
+              return;
+            }
+            notifyDaemonStartResult(ctx, result.started);
           }
           refreshStatusFromState();
           return;
