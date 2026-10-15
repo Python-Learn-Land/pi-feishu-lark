@@ -41,6 +41,7 @@ export async function sendLargeFileViaDrive(sessionId: string, filePath: string)
   // 先拿链接：转移所有权后应用可能失去元数据读取权限，meta 查询会失败
   const url = await getDriveFileUrl(fileToken);
   const { access, error: accessError } = await grantAccess(fileToken, route.senderOpenId);
+  debugLog("feishu.drive_upload.grant_done", { fileToken, access, accessError });
 
   const linkText = url || `文件 token：${fileToken}（获取链接失败，可在飞书“云文档-我收到的”里查找）`;
   await sendTextToSessionRoute(
