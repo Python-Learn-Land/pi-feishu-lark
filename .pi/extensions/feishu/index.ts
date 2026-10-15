@@ -10,6 +10,7 @@ import { FeishuBridgeStore } from "./bridge-store.js";
 import { ConversationManager } from "./conversation-manager.js";
 import { FeishuDelivery } from "./delivery.js";
 import { acquireGatewayLock, gatewayLockPath, readGatewayOwner, type GatewayLockHandle, type GatewayOwner } from "./gateway-lock.js";
+import { registerFeishuChildTools } from "./file-tool.js";
 import { FeishuMessageHandler } from "./message-handler.js";
 import { runSetup, uiConfirm } from "./setup.js";
 import { buildTaskStatusCard, parseStopTaskActionValue } from "./task-status-card.js";
@@ -18,6 +19,8 @@ import type { FeishuConfig, FeishuStatus } from "./types.js";
 
 export default function feishuExtension(pi: ExtensionAPI) {
   if (process.env[CHILD_SESSION_ENV] === "1") {
+    // 飞书桥接创建的子会话：只注册发文件工具，不启动桥接本身
+    registerFeishuChildTools(pi);
     return;
   }
 

@@ -32,7 +32,8 @@ export type StopConversationResult =
 const RESUME_PAGE_SIZE = 10;
 
 const FEISHU_SYSTEM_PROMPT_NOTE =
-  "You are replying through Feishu/Lark. Keep answers concise and readable in chat. Do not use markdown tables.";
+  "You are replying through Feishu/Lark. Keep answers concise and readable in chat. Do not use markdown tables. " +
+  "If the user asks you to send them a file, save it locally first and deliver it with the feishu_send_file tool; files over 30MB go to Feishu Drive with a share link (falling back to a temporary local download link if Drive is unavailable).";
 
 /**
  * Load the resources for a Feishu-backed child session.

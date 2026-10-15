@@ -12,6 +12,7 @@ export class FeishuBridgeStore {
       sessionId: sessionId || previous?.sessionId,
       chatId: msg.chatId,
       chatType: msg.chatType,
+      senderOpenId: msg.senderOpenId || previous?.senderOpenId,
       threadMessageId: routeThreadMessageId(msg, previous),
       lastMessageId: msg.messageId,
       updatedAt: Date.now(),
@@ -31,6 +32,11 @@ export class FeishuBridgeStore {
 
   getRoute(sessionKey: string): FeishuRoute | undefined {
     return this.read().routes[sessionKey];
+  }
+
+  getRouteBySessionId(sessionId: string): FeishuRoute | undefined {
+    const routes = this.read().routes;
+    return Object.values(routes).find((route) => route.sessionId === sessionId);
   }
 
   bindJob(sessionKey: string, jobId: string, jobName?: string, sessionId?: string): FeishuJobRoute | undefined {

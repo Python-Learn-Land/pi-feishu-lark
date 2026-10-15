@@ -32,6 +32,7 @@ export type FeishuRoute = {
   sessionId?: string;
   chatId: string;
   chatType: "p2p" | "group";
+  senderOpenId?: string;
   threadMessageId?: string;
   lastMessageId: string;
   updatedAt: number;
