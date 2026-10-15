@@ -28,6 +28,8 @@ export type DriveSendResult = {
   fileToken: string;
   url?: string;
   access: "owner" | "full" | "tenant" | "none";
+  /** access 为 tenant/none 时记录底层失败原因，便于在对话里暴露 */
+  accessError?: string;
 };
 
 export async function sendLargeFileViaDrive(sessionId: string, filePath: string): Promise<DriveSendResult> {
@@ -36,14 +38,14 @@ export async function sendLargeFileViaDrive(sessionId: string, filePath: string)
   const { fileToken, bytes } = await uploadToDrive(filePath, fileName);
   // 先拿链接：转移所有权后应用可能失去元数据读取权限，meta 查询会失败
   const url = await getDriveFileUrl(fileToken);
-  const access = await grantAccess(fileToken, route.senderOpenId);
+  const { access, error: accessError } = await grantAccess(fileToken, route.senderOpenId);
 
   const linkText = url || `文件 token：${fileToken}（获取链接失败，可在飞书“云文档-我收到的”里查找）`;
   await sendTextToSessionRoute(
     sessionId,
     `📎 ${fileName}（${formatBytes(bytes)}）\n文件较大，已上传到飞书云文档：\n${linkText}`,
   );
-  return { fileName, bytes, fileToken, url, access };
+  return { fileName, bytes, fileToken, url, access, accessError };
 }
 
 async function uploadToDrive(filePath: string, fileName: string): Promise<{ fileToken: string; bytes: number }> {
@@ -99,12 +101,13 @@ async function uploadToDrive(filePath: string, fileName: string): Promise<{ file
  * 2. 转移失败则保留 full_access（可管理，能删能改能分享）；
  * 3. 连授权都失败时降级为“租户内获得链接可阅读”。
  */
-async function grantAccess(fileToken: string, senderOpenId?: string): Promise<"owner" | "full" | "tenant" | "none"> {
+async function grantAccess(fileToken: string, senderOpenId?: string): Promise<{ access: "owner" | "full" | "tenant" | "none"; error?: string }> {
   const client = await getFeishuApiClient();
+  let firstError: string | undefined;
   if (senderOpenId) {
     let granted = false;
     try {
-      const result = await client.drive.v1.permission.member.create({
+      const result = await client.drive.v1.permissionMember.create({
         path: { token: fileToken },
         params: { type: "file", need_notification: false },
         data: { member_type: "openid", member_id: senderOpenId, perm: "full_access" },
@@ -112,35 +115,40 @@ async function grantAccess(fileToken: string, senderOpenId?: string): Promise<"o
       checkApiResult(result, "授权给发送者");
       granted = true;
     } catch (error) {
-      debugLog("feishu.drive_upload.grant_sender_failed", { fileToken, error: String(error instanceof Error ? error.message : error) });
+      firstError = errorMessage(error);
+      debugLog("feishu.drive_upload.grant_sender_failed", { fileToken, error: firstError });
     }
     if (granted) {
       try {
-        const transferred = await client.drive.v1.permission.member.transferOwner({
+        const transferred = await client.drive.v1.permissionMember.transferOwner({
           path: { token: fileToken },
           params: { type: "file", need_notification: false, remove_old_owner: true },
           data: { member_type: "openid", member_id: senderOpenId },
         });
         checkApiResult(transferred, "转移所有者");
-        return "owner";
+        return { access: "owner" };
       } catch (error) {
-        debugLog("feishu.drive_upload.transfer_failed", { fileToken, error: String(error instanceof Error ? error.message : error) });
-        return "full";
+        debugLog("feishu.drive_upload.transfer_failed", { fileToken, error: errorMessage(error) });
+        return { access: "full", error: errorMessage(error) };
       }
     }
   }
   try {
-    const result = await client.drive.v1.permission.public.patch({
+    const result = await client.drive.v1.permissionPublic.patch({
       path: { token: fileToken },
       params: { type: "file" },
       data: { link_share_entity: "tenant_readable" },
     });
     checkApiResult(result, "设置链接分享权限");
-    return "tenant";
+    return { access: "tenant", error: firstError };
   } catch (error) {
-    debugLog("feishu.drive_upload.grant_tenant_failed", { fileToken, error: String(error instanceof Error ? error.message : error) });
-    return "none";
+    debugLog("feishu.drive_upload.grant_tenant_failed", { fileToken, error: errorMessage(error) });
+    return { access: "none", error: firstError || errorMessage(error) };
   }
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function getDriveFileUrl(fileToken: string): Promise<string | undefined> {
