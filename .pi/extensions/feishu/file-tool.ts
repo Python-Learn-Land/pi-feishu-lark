@@ -62,7 +62,8 @@ async function sendLargeFile(sessionId: string, filePath: string, size: number) 
     try {
       const result = await sendLargeFileViaDrive(sessionId, filePath);
       const accessNote =
-        result.access === "sender" ? "已授权给你查看"
+        result.access === "owner" ? "文件所有权已转移给你，在云文档“我的空间”中可见，拥有完全控制权"
+        : result.access === "full" ? "已授予你可管理权限（可分享/删除），但文件所有者仍是机器人应用"
         : result.access === "tenant" ? "同一组织内获得链接的人可查看"
         : "注意：权限设置失败，链接可能无法打开，请在云文档里手动调整权限";
       return {

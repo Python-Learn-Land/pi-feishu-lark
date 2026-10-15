@@ -27,15 +27,16 @@ export type DriveSendResult = {
   bytes: number;
   fileToken: string;
   url?: string;
-  access: "sender" | "tenant" | "none";
+  access: "owner" | "full" | "tenant" | "none";
 };
 
 export async function sendLargeFileViaDrive(sessionId: string, filePath: string): Promise<DriveSendResult> {
   const route = resolveRoute(sessionId);
   const fileName = basename(filePath);
   const { fileToken, bytes } = await uploadToDrive(filePath, fileName);
-  const access = await grantAccess(fileToken, route.chatType === "p2p" ? route.senderOpenId : undefined);
+  // 先拿链接：转移所有权后应用可能失去元数据读取权限，meta 查询会失败
   const url = await getDriveFileUrl(fileToken);
+  const access = await grantAccess(fileToken, route.senderOpenId);
 
   const linkText = url || `文件 token：${fileToken}（获取链接失败，可在飞书“云文档-我收到的”里查找）`;
   await sendTextToSessionRoute(
@@ -91,20 +92,41 @@ async function uploadToDrive(filePath: string, fileName: string): Promise<{ file
   }
 }
 
-/** 私聊精确授权给发送者；群聊或授权失败时降级为“租户内获得链接可阅读”。 */
-async function grantAccess(fileToken: string, senderOpenId?: string): Promise<"sender" | "tenant" | "none"> {
+/**
+ * 授权策略（按发送者身份逐级尝试）：
+ * 1. 授予发送者 full_access（可管理），然后把所有者转移给发送者，
+ *    文件进入对方“我的空间”，对方拥有完全控制权；
+ * 2. 转移失败则保留 full_access（可管理，能删能改能分享）；
+ * 3. 连授权都失败时降级为“租户内获得链接可阅读”。
+ */
+async function grantAccess(fileToken: string, senderOpenId?: string): Promise<"owner" | "full" | "tenant" | "none"> {
   const client = await getFeishuApiClient();
   if (senderOpenId) {
+    let granted = false;
     try {
       const result = await client.drive.v1.permission.member.create({
         path: { token: fileToken },
         params: { type: "file", need_notification: false },
-        data: { member_type: "openid", member_id: senderOpenId, perm: "view" },
+        data: { member_type: "openid", member_id: senderOpenId, perm: "full_access" },
       });
       checkApiResult(result, "授权给发送者");
-      return "sender";
+      granted = true;
     } catch (error) {
       debugLog("feishu.drive_upload.grant_sender_failed", { fileToken, error: String(error instanceof Error ? error.message : error) });
+    }
+    if (granted) {
+      try {
+        const transferred = await client.drive.v1.permission.member.transferOwner({
+          path: { token: fileToken },
+          params: { type: "file", need_notification: false, remove_old_owner: true },
+          data: { member_type: "openid", member_id: senderOpenId },
+        });
+        checkApiResult(transferred, "转移所有者");
+        return "owner";
+      } catch (error) {
+        debugLog("feishu.drive_upload.transfer_failed", { fileToken, error: String(error instanceof Error ? error.message : error) });
+        return "full";
+      }
     }
   }
   try {
